@@ -1,0 +1,119 @@
+---
+title: "Hackathon - Task 1.4"
+author: "Gayatri Shejwal"
+date: "2023-12-18"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(gt, gtExtras, tidyverse, haven)
+```
+
+## 1.4 Perceived hatefulness of social media post
+
+Create a gt/gtExtras table that reports the aggregated perceived hatefulness of a set of social media posts, following good practice of visualization. For this task, consider the following:
+
+• Some guidance for the data preparation:
+
+o The content of the social media posts is stored in two types of variables: vig\_{x}\*topic and vig*{x}*sender_message. Every respondent evaluated 8 different messages, which is why x goes from 1 to 8. The perception of hatefulness is stored in the variables vig*{x}\_hateful.
+
+o Drop observations where vig_1_hateful is missing.
+
+o Recode the vig\_{x}\_topic variables according to the following scheme: gender = "Women", ideologydems = "Democrats", ideologyreps = "Republicans", muslim = "Muslim immigrants".
+
+o Construct the full content of the message by pasting together the strings of the recoded vig\_{x}*topic and vig*{x}\_sender_message variables. For instance, one of the full messages reads: "Republicans should be stopped from spreading falsehoods."
+
+o For the evaluation, you should average across all evaluated vignettes across all responses, i.e. your unit of analysis is vignettes, not respondents.
+
+• Your table should contain the following information: (1) The message text, (2) the mean and standard deviation of the hatefulness rating by message, and (3) a barplot displaying the distribution of hatefulness ratings 1 to 5 per message.
+
+• The average hatefulness column should be colored by value.
+
+• The table should provide a meaningful title and description, making it a standalone product that speaks for itself.
+
+```{r}
+
+# Load the survey and tracking datasets:
+survey_df <- readRDS("survey/meof_usa_survey_df.RDS")
+
+# Select the desired variables:
+hate_df <- survey_df |>
+  select(vig_1_topic, vig_2_topic, vig_3_topic, vig_4_topic,
+         vig_5_topic, vig_6_topic, vig_7_topic, vig_8_topic,
+         vig_1_sender_message, vig_2_sender_message,
+         vig_3_sender_message, vig_4_sender_message,
+         vig_5_sender_message, vig_6_sender_message,
+         vig_7_sender_message, vig_8_sender_message,
+         vig_1_hateful, vig_2_hateful,
+         vig_3_hateful, vig_4_hateful,
+         vig_5_hateful, vig_6_hateful,
+         vig_7_hateful, vig_8_hateful) |>
+  filter(!is.na(vig_1_hateful))
+
+
+# Recoding the observations according to the guidelines:
+
+hate_df <- hate_df |>
+  mutate_at(vars(vig_1_topic:vig_8_topic),
+            funs(recode(., "gender" = "Women", "ideologydems" = "Democrats", "ideologyreps" = "Republicans", "muslim" = "Muslim immigrants")))
+
+# Construct the full content of the message:
+
+hate_df <- hate_df |>
+  mutate(vig_1_text = paste0(vig_1_topic, " " , vig_1_sender_message),
+         vig_2_text = paste0(vig_2_topic, " " , vig_2_sender_message),
+         vig_3_text = paste0(vig_3_topic, " " , vig_3_sender_message),
+         vig_4_text = paste0(vig_4_topic, " " , vig_4_sender_message),
+         vig_5_text = paste0(vig_5_topic, " " , vig_5_sender_message),
+         vig_6_text = paste0(vig_6_topic, " " , vig_6_sender_message),
+         vig_7_text = paste0(vig_7_topic, " " , vig_7_sender_message),
+         vig_8_text = paste0(vig_8_topic, " " , vig_8_sender_message),
+         )
+
+# Filter the desired columns:
+perceived_hate <- hate_df |>
+  select(vig_1_text:vig_8_text, vig_1_hateful:vig_8_hateful)
+
+
+# Pivot the table longer to stack the messages :
+perceived_hate <- perceived_hate |>
+  pivot_longer(c("vig_1_text":"vig_8_text"),
+               names_to = "vig_text",
+               values_to = "text_message") |>
+  pivot_longer(c("vig_1_hateful":"vig_8_hateful"),
+               names_to = "vig_hateful",
+               values_to = "hateful_level") |>
+  select(text_message, hateful_level)
+
+
+table_1 <- perceived_hate |>
+  group_by(text_message) |>
+  summarise(avg_rating = mean(hateful_level, na.rm = TRUE),
+            std_dev = sd(hateful_level, na.rm = TRUE),
+            all_ratings = list(hateful_level), .groups = "drop") |>
+  arrange(desc(avg_rating))
+
+gt_table <- table_1 |>
+  gt() |>
+  tab_header(
+    title = html("<strong>Aggregated Perceived Hatefulness of Social Media Posts</strong>"),
+    subtitle = "This table shows how people perceive specific messages in the context of social media posts. The messages are displayed on a perception scale of 1 to 5: 1 being perceived as the least hateful and 5 as the most hateful by the surveyed population.") |>
+  tab_options(column_labels.background.color = "lightgrey",
+  source_notes.background.color = "lightgrey",
+  source_notes.font.size = 10) |>
+  tab_spanner(label = "Summary of Hatefulness Ratings", c(avg_rating, std_dev, all_ratings), replace = FALSE) |>
+  cols_label(text_message = md("**Message**"), avg_rating = md("**Mean**"), std_dev = md("**Standard Deviation**"), all_ratings = md("**Distribution of All Ratings**")) |>
+  fmt_number(columns = c(avg_rating, std_dev), decimals = 2) |>
+  gt_hulk_col_numeric(avg_rating) |>
+  gt_plt_dist(all_ratings, type = "histogram", line_color = "darkred",
+  fill_color = "darkred", fig_dim = c(5,10), bw = 0.5) |>
+  tab_source_note(source_note = "Source: Guess, Andrew M.; Barberá, Pablo; Yang, JungHwan; Munzert, Simon (2022): Media Exposure and Opinion Formation in an Age of Information Overload (MEOF) – Survey U.S.A. GESIS Data Archive, Cologne. ZA7895 Data file Version 1.0.0, doi:10.4232/1.13980.")
+
+# Print the table:
+gt_table
+
+
+```
